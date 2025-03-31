@@ -1,10 +1,13 @@
-use HuangProject2::{GroupManager, IssuerKeyPair, PaymentLog, SystemParams, VerifierKeyPair, audit, blind_sign_message, cred_issue, cred_verify, dual_issuer_sign, fee_deduct, group_sign, pre_payment, revoke, schnorr_sign, schnorr_verify, trace, SchnorrSignature, CryptoError};
-use ark_bls12_381::{fr, Fr, G1Affine};
+use HuangProject2::{
+    GroupManager, IssuerKeyPair, PaymentLog, SchnorrSignature, SystemParams, VerifierKeyPair,
+    audit, blind_sign_message, cred_issue, cred_verify, dual_issuer_sign, fee_deduct, group_sign,
+    pre_payment, revoke, schnorr_sign, schnorr_verify, trace,
+};
+use ark_bls12_381::{Fr, G1Affine};
 use ark_ff::{UniformRand, Zero};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use rand::thread_rng;
 use std::collections::VecDeque;
-use log::error;
 
 // 测试 SystemParams::setup 函数的性能
 fn bench_system_params_setup(c: &mut Criterion) {
@@ -191,28 +194,34 @@ fn bench_group_sign(c: &mut Criterion) {
 
     let msg = b"Performance Test message for group_sign";
     let gm = GroupManager::new(&params);
+
+    // 使用群管理员的私钥签发证书
     let member_cert = gm.issue_certificate(&params, b"unique_member_id");
 
     c.bench_function("group_sign", |b| {
         b.iter(|| {
-            match group_sign(&params, &issuer_kp.sk.expose(), msg, &member_cert, &issuer_kp.pk) {
-                Ok(sig) => black_box(sig),  // 如果签名成功，继续执行
+            // 使用群管理员私钥 gm_sk 来签名
+            match group_sign(
+                &params,
+                &issuer_kp.sk.expose(), // 发行者的私钥
+                msg,                    // 测试消息
+                &member_cert,           // 群成员证书
+                &gm.gm_sk,              // 群管理员私钥
+            ) {
+                Ok(sig) => black_box(sig), // 如果签名成功，继续执行
                 Err(e) => {
                     eprintln!("Error during group_sign: {:?}", e); // 打印错误信息
-                    // 返回一个默认值或者一个应急签名对象来避免类型不匹配
-                    // 这里使用一个默认值，你可以选择其他的错误处理策略
+                    // 返回一个应急签名对象来避免类型不匹配
                     return black_box(SchnorrSignature {
-                        r: G1Affine::identity(),  // 返回一个空的 r
-                        s: Fr::zero(),    // 返回零的 s
-                        ts: 0,                     // 时间戳设置为 0
+                        r: G1Affine::identity(), // 返回一个空的 r
+                        s: Fr::zero(),           // 返回零的 s
+                        ts: 0,                   // 时间戳设置为 0
                     });
-                },
+                }
             }
         });
     });
 }
-
-
 
 // 测试 dual_issuer_sign 函数的性能
 fn bench_dual_issuer_sign(c: &mut Criterion) {

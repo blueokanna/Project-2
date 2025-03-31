@@ -403,12 +403,12 @@ impl GroupManager {
         }
     }
 
-    // GM 为群成员生成证书，采用 GM 私钥对成员身份进行签名
     pub fn issue_certificate(&self, params: &SystemParams, member_id: &[u8]) -> GroupCertificate {
         let cert_scalar = hash_to_scalar(&params.h2_domain, member_id);
         let cert = G1::from(params.g1)
-            .mul_bigint((cert_scalar * self.gm_sk).into_bigint())
+            .mul_bigint((cert_scalar * self.gm_sk).into_bigint()) // 使用群管理员私钥
             .into_affine();
+
         let gc = GroupCertificate {
             member_id: member_id.to_vec(),
             cert,
@@ -417,6 +417,7 @@ impl GroupManager {
             .lock()
             .unwrap()
             .insert(member_id.to_vec(), gc.clone());
+
         gc
     }
 
@@ -431,22 +432,25 @@ pub fn group_sign(
     issuer_sk: &ScalarField,
     msg_bytes: &[u8],
     member_cert: &GroupCertificate,
-    gm_pk: &G1Affine,
+    gm_sk: &ScalarField,
 ) -> Result<SchnorrSignature, CryptoError> {
-    // 证书验证：计算 expected = gm_pk * hash(member_id)
     let hash_val = hash_to_scalar(&params.h2_domain, &member_cert.member_id);
-    let expected_cert = G1::from(*gm_pk)
-        .mul_bigint(hash_val.into_bigint())
+    let expected_cert = G1::from(params.g1)
+        .mul_bigint((hash_val * gm_sk).into_bigint()) // 使用群管理员私钥
         .into_affine();
+
+    // 如果计算的 expected_cert 与证书中的 cert 不匹配，返回错误
     if expected_cert != member_cert.cert {
         return Err(CryptoError::SignatureError);
     }
+
     // 签名流程：将成员证书也纳入签名哈希，保证可追溯
     let mut rng = thread_rng();
     let k = ScalarField::rand(&mut rng);
     let r = G1::from(params.g1)
         .mul_bigint(k.into_bigint())
         .into_affine();
+
     let mut buf = Vec::with_capacity(128);
     {
         let mut tmp = Vec::with_capacity(64);
@@ -455,7 +459,7 @@ pub fn group_sign(
         buf.extend_from_slice(&tmp);
     }
     buf.extend_from_slice(msg_bytes);
-    // 将群成员证书也加入 hash
+
     let cert_bytes = {
         let mut tmp = Vec::with_capacity(64);
         member_cert
@@ -465,9 +469,12 @@ pub fn group_sign(
         tmp
     };
     buf.extend_from_slice(&cert_bytes);
+
     let c = hash_to_scalar(&params.h2_domain, &buf);
+
     let mut s_val = k;
     s_val.sub_assign(&(*issuer_sk * c));
+
     Ok(SchnorrSignature {
         r,
         s: s_val,

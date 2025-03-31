@@ -1,10 +1,14 @@
-use std::collections::VecDeque;
-use ark_ec::{CurveGroup, PrimeGroup};
-use log::{error, info, LevelFilter};
-use rand::thread_rng;
-use HuangProject2::{audit, blind_sign_message, cred_issue, cred_update, cred_verify, dual_issuer_sign, fee_deduct, group_sign, pre_payment, revoke, time_bound_verify, trace, CryptoError, GroupManager, IssuerKeyPair, PaymentLog, PaymentSystem, SystemParams, VerifierKeyPair};
+use HuangProject2::{
+    CryptoError, GroupManager, IssuerKeyPair, PaymentLog, PaymentSystem, SystemParams,
+    VerifierKeyPair, audit, blind_sign_message, cred_issue, cred_update, cred_verify,
+    dual_issuer_sign, fee_deduct, group_sign, pre_payment, revoke, time_bound_verify, trace,
+};
 use ark_bls12_381::{Fr as ScalarField, G1Projective as G1};
+use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::{PrimeField, UniformRand};
+use log::{LevelFilter, error, info};
+use rand::thread_rng;
+use std::collections::VecDeque;
 
 // ======================================================================
 // 主函数：展示系统全流程（凭证操作、支付、审计、撤销与双花检测）
@@ -51,16 +55,27 @@ fn main() -> Result<(), CryptoError> {
     let (blind_r_bytes, blind_signature) =
         blind_sign_message(&params, &issuer_kp1.sk.expose(), msg, &blinding_factor);
     info!(
-    "盲签名生成成功：盲因子：{:?}, 签名：{:?}",
-    blind_r_bytes, blind_signature
-);
+        "盲签名生成成功：盲因子：{:?}, 签名：{:?}",
+        blind_r_bytes, blind_signature
+    );
 
     // 执行群签名（隐藏发行者身份，通过群成员证书追溯真实签名者）
-    let group_signature = group_sign(&params, &issuer_kp1.sk.expose(), msg, &member_cert, &gm.gm_pk)?;
+    let group_signature = group_sign(
+        &params,
+        &issuer_kp1.sk.expose(),
+        msg,
+        &member_cert,
+        &gm.gm_sk,
+    )?;
     info!("群签名生成成功：签名：{:?}", group_signature);
 
     // 执行双发行者联合签名
-    let dual_signature = dual_issuer_sign(&params, &issuer_kp1.sk.expose(), &issuer_kp2.sk.expose(), msg);
+    let dual_signature = dual_issuer_sign(
+        &params,
+        &issuer_kp1.sk.expose(),
+        &issuer_kp2.sk.expose(),
+        msg,
+    );
     info!("双发行者联合签名生成成功：签名：{:?}", dual_signature);
 
     // 凭证验证
